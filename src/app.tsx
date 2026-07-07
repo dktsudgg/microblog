@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { federation } from "@fedify/hono";
 import fedi from "./federation.ts";
-import { Layout, SetupForm } from "./views.tsx";
+import { Layout, SetupForm, Profile } from "./views.tsx";
 import db from "./db.ts";
 import type { User } from "./schema.ts";
 
@@ -34,6 +34,21 @@ app.post("/setup", async (c) => {
 
   db.prepare("insert into users (username) values (?)").run(username);
   return c.redirect("/");
+});
+
+app.get("/users/:username", async (c) => {
+  const user = db.prepare<unknown[], User>("select * from users where username = ?")
+    .get(c.req.param("username"));
+  
+  if (user == null) return c.notFound();
+
+  const url = new URL(c.req.url);
+  const handle = `@${user.username}@${url.host}`;
+  return c.html(
+    <Layout>
+      <Profile name={user.username} handle={handle} />
+    </Layout>,
+  );
 });
 
 export default app;
