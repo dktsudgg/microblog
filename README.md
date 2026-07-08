@@ -40,3 +40,10 @@ Person {
   endpoints: Endpoints { sharedInbox: URL 'http://localhost:8000/inbox' }
 }
 ```
+
+## expose to public
+
+```sh
+fedify tunnel 8000
+```
+
