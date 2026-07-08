@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { federation } from "@fedify/hono";
 import fedi from "./federation.ts";
-import { Layout, SetupForm, Profile } from "./views.tsx";
+import { Layout, SetupForm, Profile, FollowerList, } from "./views.tsx";
 import db from "./db.ts";
 import type { User, Actor } from "./schema.ts";
 
@@ -89,6 +89,26 @@ app.get("/users/:username", async (c) => {
   return c.html(
     <Layout>
       <Profile name={user.username} handle={handle} />
+    </Layout>,
+  );
+});
+
+app.get("/users/:username/followers", async (c) => {
+  const followers = db.prepare<unknown[], Actor>(
+    `
+    select followers.*
+    from follows
+    join actors as followers on follows.follower_id = followers.id
+    join actors as following on follows.following_id = following.id
+    join users on users.id = following.user_id
+    where users.username = ?
+    order by follows.created desc
+    `,
+  ).all(c.req.param("username"));
+  
+  return c.html(
+    <Layout>
+      <FollowerList followers={followers} />
     </Layout>,
   );
 });
