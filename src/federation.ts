@@ -11,6 +11,7 @@ import {
   Follow,
   Undo,
   getActorHandle,
+  type Recipient,
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { InProcessMessageQueue, MemoryKvStore } from "@fedify/fedify";
@@ -48,6 +49,7 @@ federation.setActorDispatcher("/users/{identifier}", async (ctx, identifier) => 
     url: ctx.getActorUri(identifier),
     publicKey: keys[0].cryptographicKey,
     assertionMethods: keys.map((k) => k.multikey),
+    followers: ctx.getFollowersUri(identifier),
   });
 })
 .setKeyPairsDispatcher(async (ctx, identifier) => {
@@ -56,7 +58,7 @@ federation.setActorDispatcher("/users/{identifier}", async (ctx, identifier) => 
 
   const rows = db.prepare<unknown[], Key>("select * from keys where keys.user_id = ?").all(user.id);
   const keys = Object.fromEntries(rows.map((row) => [row.type, row])) as Record<Key["type"], Key>;
-  
+
   const pairs: CryptoKeyPair[] = [];
   // 사용자가 지원하는 두 키 형식 (RSASSA-PKCS1-v1_5 및 Ed25519) 각각에 대해
   // 키 쌍을 보유하고 있는지 확인하고, 없으면 생성 후 데이터베이스에 저장:
@@ -181,5 +183,41 @@ federation.setInboxListeners("/users/{identifier}/inbox", "/inbox")
       `,
     ).run(parsed.identifier, undo.actorId.href);
   });
+
+federation.setFollowersDispatcher("/users/{identifier}/followers", (ctx, identifier, cursor) => {
+  const followers = db.prepare<unknown[], Actor>(
+    `
+    select followers.*
+    from follows
+    join actors as followers on follows.follower_id = followers.id
+    join actors as following on follows.following_id = following.id
+    join users on users.id = following.user_id
+    where users.username = ?
+    order by follows.created desc
+    `,
+  ).all(identifier);
+
+  const items: Recipient[] = followers.map((f) => ({
+    id: new URL(f.uri),
+    inboxId: new URL(f.inbox_url),
+    endpoints:
+      f.shared_inbox_url == null
+        ? null
+        : { sharedInbox: new URL(f.shared_inbox_url) },
+  }));
+  return { items };
+},
+).setCounter((ctx, identifier) => {
+  const result = db.prepare<unknown[], { cnt: number }>(
+    `
+    select count(*) as cnt
+    from follows
+    join actors on actors.id = follows.following_id
+    join users on users.id = actors.user_id
+    where users.username = ?
+    `,
+  ).get(identifier);
+  return result == null ? 0 : result.cnt;
+});
 
 export default federation;

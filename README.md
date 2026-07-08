@@ -38,9 +38,62 @@ Person {
   name: '임규진',
   url: URL 'http://localhost:8000/users/dktsudgg',
   preferredUsername: 'dktsudgg',
+  publicKey: CryptographicKey {
+    id: URL 'http://localhost:8000/users/dktsudgg#main-key',
+    owner: URL 'http://localhost:8000/users/dktsudgg',
+    publicKey: CryptoKey {
+      type: 'public',
+      extractable: true,
+      algorithm: {
+        name: 'RSASSA-PKCS1-v1_5',
+        modulusLength: 4096,
+        publicExponent: [Uint8Array],
+        hash: [Object]
+      },
+      usages: [ 'verify' ]
+    }
+  },
+  assertionMethods: [
+    Multikey {
+      id: URL 'http://localhost:8000/users/dktsudgg#multikey-1',
+      controller: URL 'http://localhost:8000/users/dktsudgg',
+      publicKey: CryptoKey {
+        type: 'public',
+        extractable: true,
+        algorithm: {
+          name: 'RSASSA-PKCS1-v1_5',
+          modulusLength: 4096,
+          publicExponent: [Uint8Array],
+          hash: [Object]
+        },
+        usages: [ 'verify' ]
+      }
+    },
+    Multikey {
+      id: URL 'http://localhost:8000/users/dktsudgg#multikey-2',
+      controller: URL 'http://localhost:8000/users/dktsudgg',
+      publicKey: CryptoKey {
+        type: 'public',
+        extractable: true,
+        algorithm: { name: 'Ed25519' },
+        usages: [ 'verify' ]
+      }
+    }
+  ],
   inbox: URL 'http://localhost:8000/users/dktsudgg/inbox',
+  followers: URL 'http://localhost:8000/users/dktsudgg/followers',
   endpoints: Endpoints { sharedInbox: URL 'http://localhost:8000/inbox' }
 }
+✔ Successfully fetched the object.
+
+$ fedify lookup http://localhost:8000/users/dktsudgg/followers
+✔ Fetched object: http://localhost:8000/users/dktsudgg/followers
+OrderedCollection {
+  id: URL 'http://localhost:8000/users/dktsudgg/followers',
+  totalItems: 1,
+  items: [ URL 'https://activitypub.academy/users/ebetia_ladazol' ]
+}
+✔ Successfully fetched the object.
 ```
 
 ## expose to public
