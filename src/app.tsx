@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { federation } from "@fedify/hono";
 import { stringifyEntities } from "stringify-entities";
 import fedi from "./federation.ts";
-import { Layout, SetupForm, Profile, FollowerList, Home, PostPage, PostList, } from "./views.tsx";
+import { Layout, SetupForm, Profile, FollowerList, Home, PostPage, PostList, FollowingList, } from "./views.tsx";
 import db from "./db.ts";
 import type { User, Actor, Post, } from "./schema.ts";
 import { Note, Create, Follow, isActor, lookupObject, } from "@fedify/vocab";
@@ -276,6 +276,26 @@ app.post("/users/:username/following", async (c) => {
     }),
   );
   return c.text("Successfully sent a follow request");
+});
+
+app.get("/users/:username/following", async (c) => {
+  const following = db.prepare<unknown[], Actor>(
+    `
+    select following.*
+    from follows
+    join actors as followers on follows.follower_id = followers.id
+    join actors as following on follows.following_id = following.id
+    join users on users.id = followers.user_id
+    where users.username = ?
+    order by follows.created desc
+    `,
+  ).all(c.req.param("username"));
+
+  return c.html(
+    <Layout>
+      <FollowingList following={following} />
+    </Layout>,
+  );
 });
 
 export default app;
