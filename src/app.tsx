@@ -6,7 +6,7 @@ import fedi from "./federation.ts";
 import { Layout, SetupForm, Profile, FollowerList, Home, PostPage, } from "./views.tsx";
 import db from "./db.ts";
 import type { User, Actor, Post, } from "./schema.ts";
-import { Note } from "@fedify/vocab";
+import { Note, Create } from "@fedify/vocab";
 
 const app = new Hono();
 app.use(federation(fedi, () => undefined));
@@ -166,7 +166,7 @@ app.post("/users/:username/posts", async (c) => {
   }
 
   const ctx = fedi.createContext(c.req.raw, undefined);
-  const url: string | null = db.transaction(() => {
+  const post: Post | null = db.transaction(() => {
     const post = db.prepare<unknown[], Post>(
       `
       INSERT INTO posts (uri, actor_id, content)
@@ -185,11 +185,24 @@ app.post("/users/:username/posts", async (c) => {
       url,
       post.id,
     );
-    return url;
+    return post;
   })();
   
-  if (url == null) return c.text("Failed to create post", 500);
-  return c.redirect(url);
+  if (post == null) return c.text("Failed to create post", 500);
+  const noteArgs = { identifier: username, id: post.id.toString() };
+  const note = await ctx.getObject(Note, noteArgs);
+  await ctx.sendActivity(
+    { identifier: username },
+    "followers",
+    new Create({
+      id: new URL("#activity", note?.id ?? undefined),
+      object: note,
+      actors: note?.attributionIds,
+      tos: note?.toIds,
+      ccs: note?.ccIds,
+    }),
+  );
+  return c.redirect(ctx.getObjectUri(Note, noteArgs).href);
 });
 
 app.get("/users/:username/posts/:id", (c) => {
@@ -212,7 +225,7 @@ app.get("/users/:username/posts/:id", (c) => {
     WHERE follows.following_id = ?
     `,
   ).get(post.actor_id)!;
-  
+
   return c.html(
     <Layout>
       <PostPage

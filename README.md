@@ -26,6 +26,7 @@ echo "SELECT * FROM users;" | sqlite3 -table microblog.sqlite3
 echo "SELECT * FROM actors;" | sqlite3 -table microblog.sqlite3
 echo "SELECT * FROM keys;" | sqlite3 -table microblog.sqlite3
 echo "SELECT * FROM follows;" | sqlite3 -table microblog.sqlite3
+echo "SELECT * FROM posts;" | sqlite3 -table microblog.sqlite3
 ```
 
 ## actor dispatcher test

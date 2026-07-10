@@ -1,3 +1,4 @@
+import { Temporal } from "@js-temporal/polyfill";
 import {
   createFederation,
   exportJwk,
@@ -13,11 +14,12 @@ import {
   getActorHandle,
   Note,
   type Recipient,
+  PUBLIC_COLLECTION
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
 import { InProcessMessageQueue, MemoryKvStore } from "@fedify/fedify";
 import db from "./db.ts";
-import type { Actor, User, Key, } from "./schema.ts";
+import type { Actor, User, Key, Post, } from "./schema.ts";
 
 const logger = getLogger("microblog");
 
@@ -222,7 +224,28 @@ federation.setFollowersDispatcher("/users/{identifier}/followers", (ctx, identif
 });
 
 federation.setObjectDispatcher(Note, "/users/{identifier}/posts/{id}", (ctx, values) => {
-  return null;
-},);
+    const post = db.prepare<unknown[], Post>(
+      `
+      select posts.*
+      from posts
+      join actors on actors.id = posts.actor_id
+      join users on users.id = actors.user_id
+      where users.username = ? and posts.id = ?
+      `,
+    ).get(values.identifier, values.id);
+    if (post == null) return null;
+
+    return new Note({
+      id: ctx.getObjectUri(Note, values),
+      attribution: ctx.getActorUri(values.identifier),
+      to: PUBLIC_COLLECTION,
+      cc: ctx.getFollowersUri(values.identifier),
+      content: post.content,
+      mediaType: "text/html",
+      published: Temporal.Instant.from(`${post.created.replace(" ", "T")}Z`),
+      url: ctx.getObjectUri(Note, values),
+    });
+  },
+);
 
 export default federation;
