@@ -13,7 +13,9 @@ import {
   Undo,
   getActorHandle,
   Note,
+  isActor,
   type Recipient,
+  type Actor as APActor,
   PUBLIC_COLLECTION
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
@@ -133,29 +135,7 @@ federation.setInboxListeners("/users/{identifier}/inbox", "/inbox")
       return;
     }
 
-    const followerId = db.prepare<unknown[], Actor>(
-      `
-      -- 팔로워 액터 레코드를 새로 추가하거나 이미 있으면 갱신
-      INSERT INTO actors (uri, handle, name, inbox_url, shared_inbox_url, url)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT (uri) DO UPDATE SET
-        handle = excluded.handle,
-        name = excluded.name,
-        inbox_url = excluded.inbox_url,
-        shared_inbox_url = excluded.shared_inbox_url,
-        url = excluded.url
-      WHERE
-        actors.uri = excluded.uri
-      RETURNING *
-      `,
-    ).get(
-      follower.id.href,
-      await getActorHandle(follower),
-      follower.name?.toString(),
-      follower.inboxId.href,
-      follower.endpoints?.sharedInbox?.href,
-      follower.url?.href,
-    )?.id;
+    const followerId = (await persistActor(follower))?.id;
 
     db.prepare("INSERT INTO follows (following_id, follower_id) VALUES (?, ?)",).run(followingId, followerId);
 
@@ -185,6 +165,35 @@ federation.setInboxListeners("/users/{identifier}/inbox", "/inbox")
       ) AND follower_id = (SELECT id FROM actors WHERE uri = ?)
       `,
     ).run(parsed.identifier, undo.actorId.href);
+  })
+  .on(Accept, async (ctx, accept) => {
+    // Accept를 보낸 액터 = 우리가 팔로우한 상대(=following)
+    const following = await accept.getActor();
+    if (!isActor(following)) return;
+
+    // Accept를 받은 개인 인박스의 주인 = 팔로우를 건 로컬 사용자(=follower).
+    // accept.getObject()로 Follow를 역참조하지 않는다. 원격 서버가 Accept의
+    // object를 URI 참조로 보낼 경우, 우리가 발행한 Follow 활동은 별도로
+    // 서빙하지 않으므로 홈페이지(HTML)를 받아 JSON 파싱 오류가 발생한다.
+    const follower = ctx.recipient;
+    if (follower == null) return;
+
+    const followingId = (await persistActor(following))?.id;
+    if (followingId == null) return;
+    db.prepare(
+      `
+      INSERT INTO follows (following_id, follower_id)
+      VALUES (
+        ?,
+        (
+          SELECT actors.id
+          FROM actors
+          JOIN users ON actors.user_id = users.id
+          WHERE users.username = ?
+        )
+      )
+      `,
+    ).run(followingId, follower);
   });
 
 federation.setFollowersDispatcher("/users/{identifier}/followers", (ctx, identifier, cursor) => {
@@ -247,5 +256,38 @@ federation.setObjectDispatcher(Note, "/users/{identifier}/posts/{id}", (ctx, val
     });
   },
 );
+
+async function persistActor(actor: APActor): Promise<Actor | null> {
+  if (actor.id == null || actor.inboxId == null) {
+    logger.debug("Actor is missing required fields: {actor}", { actor });
+    return null;
+  }
+
+  return (
+    db.prepare<unknown[], Actor>(
+      `
+      -- 액터 레코드를 새로 추가하거나 이미 있으면 갱신
+      INSERT INTO actors (uri, handle, name, inbox_url, shared_inbox_url, url)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (uri) DO UPDATE SET
+        handle = excluded.handle,
+        name = excluded.name,
+        inbox_url = excluded.inbox_url,
+        shared_inbox_url = excluded.shared_inbox_url,
+        url = excluded.url
+      WHERE
+        actors.uri = excluded.uri
+      RETURNING *
+      `,
+    ).get(
+      actor.id.href,
+      await getActorHandle(actor),
+      actor.name?.toString(),
+      actor.inboxId.href,
+      actor.endpoints?.sharedInbox?.href,
+      actor.url?.href,
+    ) ?? null
+  );
+}
 
 export default federation;
