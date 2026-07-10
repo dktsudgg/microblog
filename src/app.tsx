@@ -22,9 +22,23 @@ app.get("/", (c) => {
   ).get();
   if (user == null) return c.redirect("/setup");
 
+  const posts = db.prepare<unknown[], Post & Actor>(
+    `
+    select actors.*, posts.*
+    from posts
+    join actors on posts.actor_id = actors.id
+    where posts.actor_id = ? or posts.actor_id in (
+      select following_id
+      from follows
+      where follower_id = ?
+    )
+    order by posts.created desc
+    `,
+  ).all(user.id, user.id);
+
   return c.html(
     <Layout>
-      <Home user={user} />
+      <Home user={user} posts={posts} />
     </Layout>,
   );
 });
