@@ -11,6 +11,7 @@ import {
   Follow,
   Undo,
   getActorHandle,
+  Note,
   type Recipient,
 } from "@fedify/vocab";
 import { getLogger } from "@logtape/logtape";
@@ -219,5 +220,9 @@ federation.setFollowersDispatcher("/users/{identifier}/followers", (ctx, identif
   ).get(identifier);
   return result == null ? 0 : result.cnt;
 });
+
+federation.setObjectDispatcher(Note, "/users/{identifier}/posts/{id}", (ctx, values) => {
+  return null;
+},);
 
 export default federation;

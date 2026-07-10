@@ -1,15 +1,34 @@
 // @ts-nocheck this file is just a template
 import { Hono } from "hono";
 import { federation } from "@fedify/hono";
+import { stringifyEntities } from "stringify-entities";
 import fedi from "./federation.ts";
-import { Layout, SetupForm, Profile, FollowerList, } from "./views.tsx";
+import { Layout, SetupForm, Profile, FollowerList, Home, PostPage, } from "./views.tsx";
 import db from "./db.ts";
-import type { User, Actor } from "./schema.ts";
+import type { User, Actor, Post, } from "./schema.ts";
+import { Note } from "@fedify/vocab";
 
 const app = new Hono();
 app.use(federation(fedi, () => undefined));
 
-app.get("/", (c) => c.text("Hello, Fedify!"));
+app.get("/", (c) => {
+  const user = db.prepare<unknown[], User & Actor>(
+    `
+    select users.*, actors.*
+    from users
+    join actors on users.id = actors.user_id
+    limit 1
+    `,
+  ).get();
+  if (user == null) return c.redirect("/setup");
+
+  return c.html(
+    <Layout>
+      <Home user={user} />
+    </Layout>,
+  );
+});
+
 app.get("/setup", (c) => {
   // 계정이 이미 있는지 검사
   const user = db.prepare<unknown[], User>(
@@ -124,6 +143,85 @@ app.get("/users/:username/followers", async (c) => {
   return c.html(
     <Layout>
       <FollowerList followers={followers} />
+    </Layout>,
+  );
+});
+
+app.post("/users/:username/posts", async (c) => {
+  const username = c.req.param("username");
+  const actor = db.prepare<unknown[], Actor>(
+    `
+    select actors.*
+    from actors
+    join users on users.id = actors.user_id
+    where users.username = ?
+    `,
+  ).get(username);
+  if (actor == null) return c.redirect("/setup");
+
+  const form = await c.req.formData();
+  const content = form.get("content")?.toString();
+  if (content == null || content.trim() === "") {
+    return c.text("Content is required", 400);
+  }
+
+  const ctx = fedi.createContext(c.req.raw, undefined);
+  const url: string | null = db.transaction(() => {
+    const post = db.prepare<unknown[], Post>(
+      `
+      INSERT INTO posts (uri, actor_id, content)
+      VALUES ('https://localhost/', ?, ?)
+      RETURNING *
+      `,
+    ).get(actor.id, stringifyEntities(content, { escapeOnly: true }));
+    if (post == null) return null;
+
+    const url = ctx.getObjectUri(Note, {
+      identifier: username,
+      id: post.id.toString(),
+    }).href;
+    db.prepare("UPDATE posts SET uri = ?, url = ? WHERE id = ?").run(
+      url,
+      url,
+      post.id,
+    );
+    return url;
+  })();
+  
+  if (url == null) return c.text("Failed to create post", 500);
+  return c.redirect(url);
+});
+
+app.get("/users/:username/posts/:id", (c) => {
+  const post = db.prepare<unknown[], Post & Actor & User>(
+    `
+    select users.*, actors.*, posts.*
+    from posts
+    join actors on actors.id = posts.actor_id
+    join users on users.id = actors.user_id
+    where users.username = ? and posts.id = ?
+    `,
+  ).get(c.req.param("username"), c.req.param("id"));
+  if (post == null) return c.notFound();
+
+  // biome-ignore lint/style/noNonNullAssertion: 언제나 하나의 레코드를 반환
+  const { followers } = db.prepare<unknown[], { followers: number }>(
+    `
+    SELECT count(*) AS followers
+    FROM follows
+    WHERE follows.following_id = ?
+    `,
+  ).get(post.actor_id)!;
+  
+  return c.html(
+    <Layout>
+      <PostPage
+        name={post.name ?? post.username}
+        username={post.username}
+        handle={post.handle}
+        followers={followers}
+        post={post}
+      />
     </Layout>,
   );
 });
