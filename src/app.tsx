@@ -6,7 +6,7 @@ import fedi from "./federation.ts";
 import { Layout, SetupForm, Profile, FollowerList, Home, PostPage, PostList, FollowingList, } from "./views.tsx";
 import db from "./db.ts";
 import type { User, Actor, Post, } from "./schema.ts";
-import { Note, Create, Follow, isActor, lookupObject, } from "@fedify/vocab";
+import { Note, Create, Follow, isActor, } from "@fedify/vocab";
 
 const app = new Hono();
 app.use(federation(fedi, () => undefined));
@@ -286,7 +286,7 @@ app.post("/users/:username/following", async (c) => {
   }
 
   const ctx = fedi.createContext(c.req.raw, undefined);
-  const actor = await lookupObject(handle.trim());
+  const actor = await ctx.lookupObject(handle.trim());
   if (!isActor(actor)) {
     return c.text("Invalid actor handle or URL", 400);
   }
